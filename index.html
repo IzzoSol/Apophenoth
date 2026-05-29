@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>APOPHENOTH — The Great Work</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      font-family: 'Arial', sans-serif;
+      overflow: hidden;
+    }
+    #game-container {
+      display: none;
+    }
+    #start-screen {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: linear-gradient(180deg, #0a0015 0%, #000 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    #start-screen.hidden {
+      display: none;
+    }
+    h1 {
+      font-size: clamp(40px, 8vw, 80px);
+      background: linear-gradient(90deg, #ffd700, #00ffcc, #ff00ff, #ffd700);
+      background-size: 300% 100%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: shimmer 3s linear infinite;
+      letter-spacing: 10px;
+      margin-bottom: 10px;
+    }
+    @keyframes shimmer {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 300% 50%; }
+    }
+    .subtitle {
+      color: #888;
+      font-size: 18px;
+      letter-spacing: 8px;
+      margin-bottom: 50px;
+    }
+    #begin-btn {
+      font-size: 28px;
+      color: #00ffcc;
+      background: transparent;
+      border: 3px solid #00ffcc;
+      padding: 18px 60px;
+      cursor: pointer;
+      letter-spacing: 6px;
+      transition: all 0.3s;
+    }
+    #begin-btn:hover {
+      background: rgba(0,255,204,0.2);
+      box-shadow: 0 0 40px #00ffcc, inset 0 0 20px rgba(0,255,204,0.1);
+      transform: scale(1.05);
+    }
+    .info {
+      margin-top: 40px;
+      color: #444;
+      font-size: 12px;
+      text-align: center;
+      line-height: 2;
+    }
+    canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    #ui {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%;
+      padding: 15px;
+      color: #00ffcc;
+      z-index: 10;
+      display: none;
+      background: linear-gradient(180deg, rgba(0,0,0,0.9) 0%, transparent 100%);
+    }
+    #ui h2 {
+      font-size: 20px;
+      letter-spacing: 4px;
+      text-shadow: 0 0 10px #00ffcc;
+    }
+    .stats {
+      display: flex;
+      gap: 15px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .stat {
+      background: rgba(0,50,50,0.8);
+      border: 1px solid #00ffcc44;
+      padding: 8px 15px;
+      border-radius: 5px;
+    }
+    .stat label {
+      font-size: 9px;
+      color: #00ffcc88;
+      display: block;
+    }
+    .stat span {
+      font-size: 16px;
+      color: #ffd700;
+    }
+    #phase-display {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #ffd700;
+    }
+    #phase-bar {
+      width: 200px;
+      height: 5px;
+      background: #00ffcc22;
+      margin-top: 5px;
+      border-radius: 3px;
+    }
+    #phase-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #00ffcc, #ff00ff, #ffd700);
+      width: 0%;
+      border-radius: 3px;
+      transition: width 0.5s;
+    }
+    #controls {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 20;
+      display: none;
+    }
+    .btn {
+      background: rgba(0,255,136,0.1);
+      border: 1px solid #00ffcc;
+      color: #00ffcc;
+      padding: 10px 18px;
+      cursor: pointer;
+      font-size: 12px;
+      border-radius: 5px;
+      transition: all 0.3s;
+    }
+    .btn:hover:not(:disabled) {
+      background: rgba(0,255,136,0.3);
+      box-shadow: 0 0 20px #00ffcc88;
+    }
+    .btn:disabled { opacity: 0.3; }
+    .btn.special { border-color: #ff00ff; color: #ff00ff; }
+    .btn.plant { border-color: #228B22; color: #228B22; }
+    #logs {
+      position: fixed;
+      top: 120px;
+      left: 15px;
+      width: 220px;
+      max-height: 150px;
+      overflow-y: auto;
+      font-size: 11px;
+      color: #00ffcc88;
+      background: rgba(0,10,20,0.8);
+      padding: 10px;
+      border-radius: 8px;
+      display: none;
+    }
+    #logs::-webkit-scrollbar { width: 3px; }
+    #logs::-webkit-scrollbar-thumb { background: #00ffcc; }
+    #hint {
+      position: fixed;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div id="start-screen">
+    <h1>APOPHENOTH</h1>
+    <p class="subtitle">THE GREAT WORK</p>
+    <button id="begin-btn" onclick="startGame()">✦ BEGIN ✦</button>
+    <div class="info">
+      Choose your path. Ascend through 13 stages.<br>
+      Reach the 33rd degree.<br>
+      Then cause mayhem across the cosmos.<br><br>
+      <span style="color:#00ffcc88">Click to absorb essence</span> | 
+      <span style="color:#00ffcc88">WASD to move</span>
+    </div>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <div id="ui">
+    <h2>◈ APOPHENOTH ◈</h2>
+    <div class="stats">
+      <div class="stat"><label>ESSENCE</label><span id="essence">0</span></div>
+      <div class="stat"><label>BIOMASS</label><span id="biomass">0</span></div>
+      <div class="stat"><label>QUANTUM</label><span id="quantum">0</span></div>
+    </div>
+    <div id="phase-display">
+      <span id="phase-name">Primordial: Quantum Foam</span>
+      <div id="phase-bar"><div id="phase-fill"></div></div>
+    </div>
+  </div>
+
+  <div id="logs"></div>
+
+  <div id="controls">
+    <button class="btn" id="evolve-btn" onclick="evolve()">◈ Evolve</button>
+    <button class="btn" id="absorb-btn" onclick="absorb()">✦ Absorb</button>
+    <button class="btn plant" id="grow-btn" onclick="grow()">🌿 Grow</button>
+    <button class="btn special" id="launch-btn" onclick="launch()" disabled>🚀 Launch</button>
+    <button class="btn special" id="transmit-btn" onclick="transmit()" disabled>📡 Transmit</button>
+  </div>
+
+  <div id="hint">↑↓←→↑↓←→ or type "unalunal" to skip</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+window.addEventListener('resize', () => {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+});
+
+const PATHS = {
+  primordial: ['Quantum Foam','Primordial Soup','Microscopic Life','Simple Organism','Complex Creature','Sentient Being','Digital Mind','Brain in Vat','Photon Being','Star Consciousness','Intergalactic','Cosmic Mind','33° Initiate'],
+  plant: ['Spore','Moss','Fern','Shrub','Young Tree','Elder Tree','Sentient Flora','Conscious Forest','Gaia Connection','Earth Mind','Planetary','Biosphere','33° Druid'],
+  quantum: ['Probability Cloud','Wave Function','Entangled Pair','Quantum Tunnel','Superposition','Decoherence','Observation Mind','Probability Entity','Multiverse Walker','Quantum God','Universal Wave','Cosmic Probability','33° Mystic'],
+  cosmic: ['Stardust','Nebula Seed','Solar Child','Planet Walker','Star Singer','Galaxy Dancer','Void Walker','Dimension Weaver','Cosmic Mind','Eternal Flame','Universal Soul','First Cause','33° Celestial']
+};
+
+const COSTS = [0,25,60,150,350,700,1200,2000,3000,4500,6500,9000,13000];
+
+let game = {
+  essence: 0, biomass: 0, quantum: 0, photons: 0,
+  phase: 0, path: 'primordial', clickPower: 1, autoRate: 0,
+  launched: false, intergalactic: false, day: 1
+};
+
+let player = { x: canvas.width/2, y: canvas.height/2, size: 40, pulse: 0 };
+let entities = [];
+let particles = [];
+let stars = [];
+let floatingTexts = [];
+let running = false;
+
+for(let i = 0; i < 400; i++) {
+  stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: Math.random() * 2, twinkle: Math.random() * 6.28 });
+}
+
+for(let i = 0; i < 20; i++) {
+  entities.push({ type: 'amoeba', x: Math.random() * canvas.width, y: Math.random() * canvas.height * 0.6, size: 15 + Math.random() * 15, vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5, hue: 100 + Math.random() * 80, pulse: Math.random() * 6.28, wobble: Math.random() * 6.28 });
+}
+for(let i = 0; i < 40; i++) {
+  entities.push({ type: 'nutrient', x: Math.random() * canvas.width, y: Math.random() * canvas.height * 0.8, size: 2 + Math.random() * 3, hue: 40 + Math.random() * 30, pulse: Math.random() * 6.28 });
+}
+
+let keys = {};
+let konamiIdx = 0;
+let buffer = '';
+const KONAMI = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
+
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  
+  if (e.key === KONAMI[konamiIdx]) {
+    konamiIdx++;
+    if (konamiIdx >= KONAMI.length && running) skipEvolve();
+  } else {
+    konamiIdx = 0;
+  }
+  
+  buffer += e.key.toLowerCase();
+  if (buffer.length > 15) buffer = buffer.slice(-15);
+  if (buffer.includes('unalunal') && running) skipEvolve();
+});
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  document.getElementById('ui').style.display = 'block';
+  document.getElementById('controls').style.display = 'flex';
+  document.getElementById('logs').style.display = 'block';
+  running = true;
+  gameLoop();
+  
+  addLog('═══════════════════════════');
+  addLog('✦ ASCENSION BEGINS ✦');
+  addLog('═══════════════════════════');
+  addLog('Click to absorb essence.');
+}
+
+function addLog(text) {
+  const log = document.getElementById('logs');
+  const div = document.createElement('div');
+  div.textContent = '▸ ' + text;
+  log.prepend(div);
+  if (log.children.length > 12) log.lastChild.remove();
+}
+
+function showMessage(text) {
+  const msg = document.createElement('div');
+  msg.style.cssText = 'position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);font-size:28px;color:#fff;text-shadow:0 0 30px #00ffcc,0 0 60px #ff00ff;z-index:1000;opacity:0;transition:opacity 0.5s;';
+  msg.textContent = text;
+  document.body.appendChild(msg);
+  setTimeout(() => msg.style.opacity = 1, 50);
+  setTimeout(() => { msg.style.opacity = 0; setTimeout(() => msg.remove(), 500); }, 2500);
+}
+
+function formatNum(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1) + 'K';
+  return Math.floor(n);
+}
+
+function updateStats() {
+  document.getElementById('essence').textContent = formatNum(game.essence);
+  document.getElementById('biomass').textContent = formatNum(game.biomass);
+  document.getElementById('quantum').textContent = formatNum(game.quantum);
+  
+  const phases = PATHS[game.path];
+  const phase = phases[Math.min(game.phase, phases.length - 1)];
+  document.getElementById('phase-name').textContent = phase;
+  
+  const pct = ((game.phase + 1) / phases.length) * 100;
+  document.getElementById('phase-fill').style.width = pct + '%';
+  
+  const cost = COSTS[Math.min(game.phase + 1, COSTS.length - 1)];
+  const btn = document.getElementById('evolve-btn');
+  if (game.phase < phases.length - 1) {
+    btn.textContent = '◈ Evolve (' + formatNum(cost) + ')';
+    btn.disabled = game.essence < cost;
+  } else {
+    btn.textContent = '✦ 33° ASCENDED';
+    btn.disabled = true;
+  }
+  
+  document.getElementById('launch-btn').disabled = game.phase < 8;
+  document.getElementById('transmit-btn').disabled = !game.launched;
+}
+
+function clickEssence(e) {
+  if (!running) return;
+  
+  const amt = game.clickPower * 20;
+  game.essence += amt;
+  game.biomass += amt * 0.3;
+  game.quantum += amt * 0.05;
+  
+  for(let i = 0; i < 10; i++) {
+    particles.push({
+      x: e.clientX, y: e.clientY,
+      vx: (Math.random() - 0.5) * 12,
+      vy: (Math.random() - 0.5) * 12,
+      size: 3 + Math.random() * 4, life: 1,
+      color: ['#00ff88','#00ffcc','#ff00ff','#ffd700'][Math.floor(Math.random() * 4)]
+    });
+  }
+  
+  floatingTexts.push({ x: e.clientX, y: e.clientY, text: '+' + formatNum(amt), color: '#00ff88', life: 1, vy: -2.5 });
+  updateStats();
+}
+
+function evolve() {
+  const phases = PATHS[game.path];
+  const cost = COSTS[Math.min(game.phase + 1, COSTS.length - 1)];
+  
+  if (game.phase < phases.length - 1 && game.essence >= cost) {
+    game.essence -= cost;
+    game.phase++;
+    game.clickPower *= 2.5;
+    game.autoRate += 4;
+    player.size = 40 + game.phase * 7;
+    
+    showMessage('⚡ ' + phases[game.phase].toUpperCase() + '!');
+    addLog('⚡ ' + phases[game.phase]);
+    
+    for(let i = 0; i < 40; i++) {
+      particles.push({ x: player.x, y: player.y, vx: (Math.random() - 0.5) * 15, vy: (Math.random() - 0.5) * 15, size: 4, life: 1.5, color: '#00ffcc' });
+    }
+    
+    if (game.phase === 7) addLog('🧠 BRAIN IN THE VAT');
+    if (game.phase === 12) { addLog('══════════════════'); addLog('⚡⚡ 33° DEGREE! ⚡⚡'); addLog('Cosmic mayhem awaits...'); }
+    updateStats();
+  }
+}
+
+function skipEvolve() {
+  const phases = PATHS[game.path];
+  if (game.phase < phases.length - 1) {
+    game.phase++;
+    game.essence += 50000;
+    game.clickPower = 100;
+    showMessage('⚡ SKIP!');
+    addLog('🔥 Skipped to ' + phases[game.phase]);
+    if (game.phase >= 8) game.launched = true;
+    updateStats();
+  }
+}
+
+function absorb() {
+  const targets = entities.filter(e => e.type === 'amoeba');
+  if (targets.length > 0) {
+    const t = targets[Math.floor(Math.random() * targets.length)];
+    const amt = Math.floor(t.size * 4);
+    game.essence += amt;
+    game.biomass += amt * 0.5;
+    entities = entities.filter(e => e !== t);
+    
+    for(let i = 0; i < 15; i++) particles.push({ x: player.x, y: player.y, vx: (Math.random() - 0.5) * 8, vy: (Math.random() - 0.5) * 8, size: 3, life: 1, color: '#ff00ff' });
+    floatingTexts.push({ x: player.x, y: player.y - 30, text: '+' + amt, color: '#ff00ff', life: 1, vy: -2 });
+    addLog('✦ +' + amt + ' Essence');
+    updateStats();
+  }
+}
+
+function grow() {
+  if (game.path !== 'plant') { addLog('Select Plant path first!'); return; }
+  const bonus = 100 + game.phase * 50;
+  game.essence += bonus;
+  game.biomass += bonus;
+  addLog('🌿 +' + bonus + ' Essence');
+  floatingTexts.push({ x: player.x, y: player.y - 40, text: '+' + bonus, color: '#228B22', life: 1.5, vy: -2 });
+  updateStats();
+}
+
+function launch() {
+  if (game.phase >= 8 && !game.launched) {
+    game.launched = true;
+    addLog('🚀 BRAIN LAUNCHED!');
+    addLog('📡 Transmitting...');
+    showMessage('🌌 INTO THE VOID');
+    updateStats();
+  }
+}
+
+function transmit() {
+  if (game.launched && game.photons < 1e6) {
+    const amt = 1000 + game.quantum * 2;
+    game.photons += amt;
+    const msgs = ['📡 Orion Arm receives...','🌟 Andromeda responds...','👽 Contact confirmed...','🌌 You are known...'];
+    addLog(msgs[Math.floor(Math.random() * msgs.length)]);
+    if (game.photons > 100000 && !game.intergalactic) { game.intergalactic = true; addLog('⚡🌌 GALACTIC FEDERATION!'); showMessage('⚡ MAYHEM BEGINS'); }
+    updateStats();
+  }
+}
+
+function drawBackground() {
+  ctx.fillStyle = '#000010';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  stars.forEach(s => {
+    s.twinkle += 0.05;
+    const a = 0.3 + Math.sin(s.twinkle) * 0.3;
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawEntities() {
+  entities.forEach(e => {
+    if (e.type === 'amoeba') {
+      e.x += e.vx; e.y += e.vy; e.pulse += 0.08; e.wobble += 0.05;
+      if (e.x < -50) e.x = canvas.width + 50;
+      if (e.x > canvas.width + 50) e.x = -50;
+      if (e.y < -50) e.y = canvas.height * 0.6 + 50;
+      if (e.y > canvas.height * 0.6 + 50) e.y = -50;
+      
+      ctx.fillStyle = `hsla(${e.hue},70%,45%,0.7)`;
+      ctx.shadowColor = `hsla(${e.hue},70%,50%,0.8)`;
+      ctx.shadowBlur = 15;
+      ctx.beginPath();
+      for(let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + e.wobble;
+        const w = Math.sin(e.pulse + i * 0.5) * 4;
+        const px = e.x + Math.cos(a) * (e.size + w);
+        const py = e.y + Math.sin(a) * (e.size + w);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      
+      ctx.fillStyle = '#fff';
+      for(let i = 0; i < 2; i++) {
+        ctx.beginPath();
+        ctx.arc(e.x + Math.cos(i * 3 + e.pulse) * e.size * 0.3, e.y + Math.sin(i * 3 + e.pulse) * e.size * 0.3, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (e.type === 'nutrient') {
+      e.pulse += 0.05;
+      ctx.fillStyle = `hsla(${e.hue},80%,60%,${0.5 + Math.sin(e.pulse) * 0.3})`;
+      ctx.shadowColor = `hsla(${e.hue},80%,60%,0.8)`;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  });
+}
+
+function drawPlayer() {
+  player.pulse += 0.06;
+  
+  ctx.save();
+  ctx.translate(player.x, player.y);
+  
+  const hue = game.path === 'quantum' ? 280 : game.path === 'plant' ? 100 : game.path === 'cosmic' ? 320 : 160;
+  const wobble = Math.sin(player.pulse) * 8;
+  
+  const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, player.size + wobble);
+  grad.addColorStop(0, `hsl(${hue},80%,60%)`);
+  grad.addColorStop(0.7, `hsl(${hue + 30},70%,40%)`);
+  grad.addColorStop(1, `hsl(${hue + 60},60%,25%)`);
+  ctx.fillStyle = grad;
+  ctx.shadowColor = `hsl(${hue},80%,50%)`;
+  ctx.shadowBlur = 30;
+  
+  ctx.beginPath();
+  ctx.ellipse(0, 0, player.size + wobble, player.size - wobble * 0.5, player.pulse * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+  
+  if (game.path !== 'quantum') {
+    ctx.fillStyle = '#fff';
+    ctx.shadowBlur = 5;
+    ctx.beginPath();
+    ctx.arc(-player.size * 0.18, -player.size * 0.12, player.size * 0.14, 0, Math.PI * 2);
+    ctx.arc(player.size * 0.18, -player.size * 0.12, player.size * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(-player.size * 0.18, -player.size * 0.12, player.size * 0.07, 0, Math.PI * 2);
+    ctx.arc(player.size * 0.18, -player.size * 0.12, player.size * 0.07, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.strokeStyle = '#8800ff';
+    ctx.lineWidth = 2;
+    for(let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + player.pulse;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a) * player.size * 1.4, Math.sin(a) * player.size * 1.4);
+      ctx.stroke();
+    }
+  }
+  
+  ctx.restore();
+}
+
+function drawParticles() {
+  particles = particles.filter(p => {
+    p.x += p.vx; p.y += p.vy;
+    p.life -= 0.02;
+    if (p.life > 0) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      return true;
+    }
+    return false;
+  });
+  
+  floatingTexts = floatingTexts.filter(t => {
+    t.y += t.vy;
+    t.life -= 0.02;
+    if (t.life > 0) {
+      ctx.globalAlpha = t.life;
+      ctx.font = 'bold 14px Arial';
+      ctx.fillStyle = t.color;
+      ctx.fillText(t.text, t.x, t.y);
+      ctx.globalAlpha = 1;
+      return true;
+    }
+    return false;
+  });
+}
+
+function gameLoop() {
+  if (!running) return;
+  
+  drawBackground();
+  drawEntities();
+  drawPlayer();
+  drawParticles();
+  
+  const speed = 6;
+  if (keys['ArrowLeft'] || keys['a']) player.x -= speed;
+  if (keys['ArrowRight'] || keys['d']) player.x += speed;
+  if (keys['ArrowUp'] || keys['w']) player.y -= speed;
+  if (keys['ArrowDown'] || keys['s']) player.y += speed;
+  
+  player.x = Math.max(50, Math.min(canvas.width - 50, player.x));
+  player.y = Math.max(50, Math.min(canvas.height - 50, player.y));
+  
+  if (Math.random() < 0.02 && game.phase < 5) entities.push({ type: 'amoeba', x: Math.random() * canvas.width, y: Math.random() * canvas.height * 0.6, size: 15 + Math.random() * 15, vx: (Math.random() - 0.5) * 1.5, vy: (Math.random() - 0.5) * 1.5, hue: 100 + Math.random() * 80, pulse: Math.random() * 6.28, wobble: Math.random() * 6.28 });
+  if (Math.random() < 0.05) entities.push({ type: 'nutrient', x: Math.random() * canvas.width, y: Math.random() * canvas.height * 0.8, size: 2 + Math.random() * 3, hue: 40 + Math.random() * 30, pulse: Math.random() * 6.28 });
+  
+  game.essence += game.autoRate * 0.016;
+  game.day += 0.01;
+  updateStats();
+  
+  requestAnimationFrame(gameLoop);
+}
+
+canvas.addEventListener('click', clickEssence);
+</script>
+</body>
+</html>
