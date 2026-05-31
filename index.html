@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>APOPHENOTH v2.0 — The Ascension</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>APOPHENOTH v3.0 — The Ascension (3D)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -26,15 +29,49 @@ body {
   background: var(--bg);
   font-family: 'Segoe UI', system-ui, sans-serif;
   overflow: hidden;
-  cursor: crosshair;
+  cursor: default;
   user-select: none;
   color: var(--text);
 }
 
-/* === CANVAS LAYERS === */
-#starfield { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
-#game-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
-#fx-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+/* === THREE.JS RENDERER === */
+#three-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+#three-container canvas { display: block; }
+#minimap-canvas { position: fixed; top: 10px; right: 10px; width: 130px; height: 130px; z-index: 10; border-radius: 8px; border: 1px solid rgba(255,255,255,0.08); pointer-events: none; }
+
+/* === MOBILE JOYSTICK === */
+#joystick-zone {
+  position: fixed; bottom: 30px; left: 30px; z-index: 50;
+  width: 120px; height: 120px; display: none; touch-action: none;
+  user-select: none; -webkit-user-select: none;
+}
+#joystick-base {
+  width: 100%; height: 100%; border-radius: 50%;
+  background: rgba(0, 212, 255, 0.08);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  position: relative; display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+#joystick-knob {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(0, 212, 255, 0.25);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  transition: none;
+}
+#joystick-knob.active {
+  background: rgba(0, 212, 255, 0.4);
+  border-color: rgba(0, 212, 255, 0.6);
+}
+@media (pointer: coarse) {
+  #joystick-zone { display: block; }
+  #hud { transform: scale(0.85); transform-origin: top center; }
+  #ability-box { display: none; }
+  #controls-wrap { display: none; }
+  #player-hp-wrap { bottom: 160px; }
+  #needs-hud { right: 5px; transform: scale(0.8); }
+  #res-hud { right: 5px; transform: scale(0.85); }
+  .menu-box { transform: scale(0.85); transform-origin: center; }
+}
 
 /* === GLASS MIXIN === */
 .glass {
@@ -237,6 +274,16 @@ body {
   box-shadow: 0 0 12px var(--cyan);
 }
 
+#zone-display {
+  font-size: 9px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 3px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
 /* === STAT ROW === */
 #stat-row {
   display: flex;
@@ -269,6 +316,8 @@ body {
 #moon-icon-hud { font-size: 28px; filter: drop-shadow(0 0 8px var(--gold)); }
 #day-text-hud { font-size: 10px; color: var(--text-dim); }
 #entangle-hud { font-size: 10px; color: var(--purple); font-weight: bold; }
+#mute-btn { font-size: 14px; cursor: pointer; opacity: 0.7; transition: opacity 0.2s; user-select: none; }
+#mute-btn:hover { opacity: 1; }
 
 /* === CONTROLS === */
 #controls-wrap {
@@ -494,8 +543,6 @@ body {
 }
 .story-close:hover { border-color: var(--text); color: var(--text); }
 
-/* Override cursor for aiming feel */
-canvas { cursor: crosshair; }
 
 /* === COUNCIL OVERLAY === */
 .council-overlay {
@@ -793,9 +840,13 @@ canvas { cursor: crosshair; }
 </head>
 <body>
 
-<canvas id="starfield"></canvas>
-<canvas id="game-canvas"></canvas>
-<canvas id="fx-canvas"></canvas>
+<div id="three-container"></div>
+<canvas id="minimap-canvas"></canvas>
+
+<!-- Virtual Joystick (mobile) -->
+<div id="joystick-zone">
+  <div id="joystick-base"><div id="joystick-knob"></div></div>
+</div>
 
 <!-- MENU -->
 <div id="menu">
@@ -912,12 +963,14 @@ canvas { cursor: crosshair; }
   <div id="hud-center">
     <div id="phase-display">Quantum Foam</div>
     <div id="phase-track"><div id="phase-progress"></div></div>
+    <div id="zone-display"></div>
   </div>
   <div id="hud-right">
     <div id="right-meta">
       <div id="moon-icon-hud">🌑</div>
       <div id="day-text-hud">Day 1</div>
       <div id="entangle-hud">⟨E⟩ 0%</div>
+      <div id="mute-btn" onclick="toggleMute()">🔊</div>
     </div>
   </div>
 </div>
@@ -1035,44 +1088,291 @@ canvas { cursor: crosshair; }
 </div>
 
 <script>
-// === STARFIELD ===
-const starCanvas = document.getElementById('starfield');
-const starCtx = starCanvas.getContext('2d');
-starCanvas.width = window.innerWidth;
-starCanvas.height = window.innerHeight;
-
-let bgStars = [];
-for(let i = 0; i < 250; i++) {
-  bgStars.push({ x: Math.random() * starCanvas.width, y: Math.random() * starCanvas.height, size: Math.random() * 1.8, twinkle: Math.random() * Math.PI * 2, speed: 0.3 + Math.random() * 1.2, color: Math.random() > 0.85 ? 50 : 200 });
+// ─── THREE.JS IS GLOBAL (loaded via CDN script tags) ───
+if (typeof THREE === 'undefined') {
+  document.body.innerHTML = '<div style="color:white;padding:40px;font-family:sans-serif"><h1>Failed to load 3D engine</h1><p>Check your internet connection and reload.</p></div>';
+  throw new Error('THREE not loaded');
 }
 
-function animateStars() {
-  starCtx.fillStyle = '#000003';
-  starCtx.fillRect(0, 0, starCanvas.width, starCanvas.height);
-  
-  bgStars.forEach(s => {
-    s.twinkle += 0.015 * s.speed;
-    const alpha = 0.15 + Math.sin(s.twinkle) * 0.2;
-    starCtx.fillStyle = `hsla(${s.color},70%,80%,${alpha})`;
-    starCtx.beginPath();
-    starCtx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
-    starCtx.fill();
+// ─── THREE.JS SCENE SETUP ───
+const container = document.getElementById('three-container');
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x07060e, 0.00012);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+container.appendChild(renderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 6000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 60;
+controls.maxDistance = 600;
+controls.maxPolarAngle = Math.PI / 2.2;
+controls.target.set(1500, 0, 1000);
+
+document.addEventListener('wheel', e => {
+  if (e.target === renderer.domElement || e.target.closest('#three-container')) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
+// ─── LIGHTING ───
+const ambientLight = new THREE.AmbientLight(0x222244, 0.6);
+scene.add(ambientLight);
+const hemiLight = new THREE.HemisphereLight(0x4466ff, 0x222244, 0.6);
+scene.add(hemiLight);
+const sunLight = new THREE.DirectionalLight(0xffeedd, 1.8);
+sunLight.position.set(800, 600, 400);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.width = 2048;
+sunLight.shadow.mapSize.height = 2048;
+sunLight.shadow.camera.near = 1;
+sunLight.shadow.camera.far = 2000;
+sunLight.shadow.camera.left = -800;
+sunLight.shadow.camera.right = 800;
+sunLight.shadow.camera.top = 800;
+sunLight.shadow.camera.bottom = -800;
+scene.add(sunLight);
+const rimLight = new THREE.DirectionalLight(0x8800ff, 0.3);
+rimLight.position.set(-400, 300, -600);
+scene.add(rimLight);
+
+// ─── SKYBOX (Star Particles) ───
+const starGeo = new THREE.BufferGeometry();
+const starCount = 3000;
+const starPos = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  const r = 2500 + Math.random() * 500;
+  starPos[i*3] = r * Math.sin(phi) * Math.cos(theta);
+  starPos[i*3+1] = Math.abs(r * Math.cos(phi));
+  starPos[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
+}
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+const starMat = new THREE.PointsMaterial({
+  color: 0xffffff, size: 1.5, transparent: true, opacity: 0.7,
+  blending: THREE.AdditiveBlending, sizeAttenuation: true
+});
+scene.add(new THREE.Points(starGeo, starMat));
+
+// ─── TERRAIN ───
+const WORLD_W = 3000, WORLD_H = 2000;
+const groundGeo = new THREE.PlaneGeometry(WORLD_W, WORLD_H, 60, 40);
+const posArr = groundGeo.attributes.position.array;
+const colors = new Float32Array(posArr.length);
+
+const ZONES = [
+  { name: 'Primordial Shallows', x: 0, y: 0, w: 1000, h: 800, color: new THREE.Color(0x003344) },
+  { name: 'Verdant Wilds', x: 1000, y: 0, w: 800, h: 800, color: new THREE.Color(0x0a2a0a) },
+  { name: 'Quantum Fields', x: 0, y: 800, w: 800, h: 600, color: new THREE.Color(0x1a0044) },
+  { name: 'Cosmic Expanse', x: 1800, y: 600, w: 1200, h: 800, color: new THREE.Color(0x220033) },
+  { name: 'Void Wastes', x: 800, y: 1400, w: 1000, h: 600, color: new THREE.Color(0x111118) }
+];
+
+function getTerrainZone(x, y) {
+  for (const z of ZONES) { if (x >= z.x && x <= z.x+z.w && y >= z.y && y <= z.y+z.h) return z; }
+  return null;
+}
+
+for (let i = 0; i < posArr.length; i += 3) {
+  const wx = posArr[i] + WORLD_W/2, wy = posArr[i+1] + WORLD_H/2;
+  const zi = ZONES.findIndex(z => wx >= z.x && wx <= z.x+z.w && wy >= z.y && wy <= z.y+z.h);
+  const base = zi >= 0 ? ZONES[zi].color : new THREE.Color(0x0a0a14);
+  colors[i] = base.r; colors[i+1] = base.g; colors[i+2] = base.b;
+  posArr[i+2] = Math.sin(wx*0.01)*Math.cos(wy*0.008)*3 + Math.sin(wx*0.025+wy*0.02)*1.5;
+}
+groundGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+groundGeo.computeVertexNormals();
+const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0.1, side: THREE.DoubleSide });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Zone border lines
+const borderMat = new THREE.LineBasicMaterial({ color: 0x00aaff, transparent: true, opacity: 0.15 });
+ZONES.forEach(z => {
+  const pts = [new THREE.Vector3(z.x,1.5,z.y), new THREE.Vector3(z.x+z.w,1.5,z.y), new THREE.Vector3(z.x+z.w,1.5,z.y+z.h), new THREE.Vector3(z.x,1.5,z.y+z.h), new THREE.Vector3(z.x,1.5,z.y)];
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), borderMat));
+});
+
+// World border
+const wp = [new THREE.Vector3(0,1,0), new THREE.Vector3(WORLD_W,1,0), new THREE.Vector3(WORLD_W,1,WORLD_H), new THREE.Vector3(0,1,WORLD_H), new THREE.Vector3(0,1,0)];
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(wp), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.06 })));
+
+// ─── 3D OBJECT CONTAINERS ───
+const entityGroup = new THREE.Group();
+scene.add(entityGroup);
+const threeObjs = { player: null, playerLight: null, npcs: new Map(), structures: new Map(), resources: new Map(), enemies: new Map(), floatLabels: [] };
+
+// ─── 3D MODEL CREATION ───
+function makePlayerMesh() {
+  const g = new THREE.Group();
+  // Body
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(14, 12, 12),
+    new THREE.MeshStandardMaterial({ color: 0x00d4ff, emissive: 0x004466, emissiveIntensity: 0.5, metalness: 0.3, roughness: 0.2 })
+  );
+  body.castShadow = true; g.add(body);
+  // Crown / halo ring
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(10, 1.2, 8, 20),
+    new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 0.8, transparent: true, opacity: 0.7 })
+  );
+  ring.rotation.x = Math.PI/2; ring.position.y = 16; g.add(ring);
+  // Outer glow sprite
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = 64; glowCanvas.height = 64;
+  const gctx = glowCanvas.getContext('2d');
+  const grad = gctx.createRadialGradient(32,32,0,32,32,32);
+  grad.addColorStop(0,'rgba(0,212,255,0.6)'); grad.addColorStop(0.5,'rgba(0,212,255,0.15)'); grad.addColorStop(1,'rgba(0,212,255,0)');
+  gctx.fillStyle = grad; gctx.fillRect(0,0,64,64);
+  const glowTex = new THREE.CanvasTexture(glowCanvas);
+  const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+  glowSprite.scale.set(50,50,1); g.add(glowSprite);
+  return g;
+}
+
+function makeNPCMesh(color, icon) {
+  const g = new THREE.Group();
+  const hue = new THREE.Color(color);
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(6, 8, 16, 6),
+    new THREE.MeshStandardMaterial({ color: hue, emissive: hue, emissiveIntensity: 0.3, metalness: 0.2, roughness: 0.6 })
+  );
+  body.position.y = 8; body.castShadow = true; g.add(body);
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(4, 8, 8),
+    new THREE.MeshStandardMaterial({ color: hue, emissive: hue, emissiveIntensity: 0.2, roughness: 0.4 })
+  );
+  head.position.y = 18; g.add(head);
+  return g;
+}
+
+function makeStructureMesh(type, color) {
+  const g = new THREE.Group();
+  const c = new THREE.Color(color);
+  if (type === 'essenceGeyser') {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(6,10,8,8), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.4, roughness: 0.3 }));
+    base.position.y = 4; base.castShadow = true; g.add(base);
+    const top = new THREE.Mesh(new THREE.ConeGeometry(8,12,8), new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 0.6, transparent: true, opacity: 0.7 }));
+    top.position.y = 14; g.add(top);
+  } else if (type === 'meditationChamber') {
+    const d = new THREE.Mesh(new THREE.CylinderGeometry(10,12,6,8), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.3, roughness: 0.4 }));
+    d.position.y = 3; d.castShadow = true; g.add(d);
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(8,1.5,6,12), new THREE.MeshStandardMaterial({ color: 0xff8800, emissive: 0xff8800, emissiveIntensity: 0.5, transparent: true, opacity: 0.6 }));
+    arch.position.y = 8; g.add(arch);
+  } else if (type === 'nexusHub') {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(10,8,10), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.3, roughness: 0.5 }));
+    b.position.y = 4; b.castShadow = true; g.add(b);
+    const spire = new THREE.Mesh(new THREE.ConeGeometry(4,14,6), new THREE.MeshStandardMaterial({ color: 0xff00ff, emissive: 0xff00ff, emissiveIntensity: 0.5 }));
+    spire.position.y = 15; g.add(spire);
+  } else if (type === 'stellarTurret') {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(4,6,6,6), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.4, roughness: 0.3 }));
+    b.position.y = 3; b.castShadow = true; g.add(b);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,10,6), new THREE.MeshStandardMaterial({ color: 0xff4400, emissive: 0xff4400, emissiveIntensity: 0.6 }));
+    barrel.position.y = 8; g.add(barrel);
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(3,8,8), new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xffaa00, emissiveIntensity: 0.8 }));
+    orb.position.y = 11; g.add(orb);
+  } else if (type === 'voidWall') {
+    const w = new THREE.Mesh(new THREE.BoxGeometry(14,10,2), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.2, roughness: 0.7 }));
+    w.position.y = 5; w.castShadow = true; g.add(w);
+  } else if (type === 'cosmicLab') {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(12,6,12), new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.3, roughness: 0.4 }));
+    b.position.y = 3; b.castShadow = true; g.add(b);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(7,10,8,0,Math.PI*2,0,Math.PI/2), new THREE.MeshStandardMaterial({ color: 0x8800ff, emissive: 0x8800ff, emissiveIntensity: 0.4, transparent: true, opacity: 0.6 }));
+    dome.position.y = 6; g.add(dome);
+  }
+  return g;
+}
+
+function makeResourceMesh() {
+  const g = new THREE.Group();
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(4, 8, 8),
+    new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffd700, emissiveIntensity: 0.8, metalness: 0.5, roughness: 0.1 })
+  );
+  g.add(core);
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = 48; glowCanvas.height = 48;
+  const gc = glowCanvas.getContext('2d');
+  const gd = gc.createRadialGradient(24,24,0,24,24,24);
+  gd.addColorStop(0,'rgba(255,215,0,0.5)'); gd.addColorStop(1,'rgba(255,215,0,0)');
+  gc.fillStyle = gd; gc.fillRect(0,0,48,48);
+  const gt = new THREE.CanvasTexture(glowCanvas);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: gt, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+  spr.scale.set(24,24,1); g.add(spr);
+  return g;
+}
+
+function makeTDEnemyMesh(isBoss) {
+  const g = new THREE.Group();
+  const s = isBoss ? 14 : 7;
+  const color = isBoss ? 0xff0000 : 0xff6644;
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(s, 8, 6),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.3, roughness: 0.5 })
+  );
+  body.position.y = s; body.castShadow = true; g.add(body);
+  if (isBoss) {
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(10,6,6), new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.8 }));
+    crown.position.y = s+6; g.add(crown);
+    // Boss aura
+    const c2 = document.createElement('canvas');
+    c2.width=48;c2.height=48; const gc2=c2.getContext('2d');
+    const gd2=gc2.createRadialGradient(24,24,0,24,24,24);
+    gd2.addColorStop(0,'rgba(255,0,0,0.6)'); gd2.addColorStop(1,'rgba(255,0,0,0)');
+    gc2.fillStyle=gd2; gc2.fillRect(0,0,48,48);
+    const t2=new THREE.CanvasTexture(c2);
+    const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:t2,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false}));
+    spr.scale.set(60,60,1); g.add(spr);
+  }
+  return g;
+}
+
+function makeParticleSystem() {
+  const count = 200;
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    pos[i*3] = (Math.random()-0.5)*WORLD_W;
+    pos[i*3+1] = Math.random()*50;
+    pos[i*3+2] = (Math.random()-0.5)*WORLD_H;
+    sizes[i] = 0.5 + Math.random()*2;
+    colors[i*3] = 0; colors[i*3+1] = 0.8; colors[i*3+2] = 1;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({
+    size: 2, transparent: true, opacity: 0.4,
+    blending: THREE.AdditiveBlending, sizeAttenuation: true,
+    vertexColors: true
   });
-  requestAnimationFrame(animateStars);
+  return new THREE.Points(geo, mat);
 }
-animateStars();
+threeObjs.particles = makeParticleSystem();
+scene.add(threeObjs.particles);
 
-// === GAME CANVAS ===
-const canvas = document.getElementById('game-canvas');
-const ctx = canvas.getContext('2d');
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+// ─── RAYCASTER ───
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
 
+// ─── RESIZE HANDLER ───
 window.addEventListener('resize', () => {
-  starCanvas.width = window.innerWidth;
-  starCanvas.height = window.innerHeight;
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
 });
 
 // === DATA ===
@@ -1123,11 +1423,12 @@ let stars = [];
 let floatingTexts = [];
 let projectiles = [];
 let running = false;
-let cam = { x: 0, y: 0 };
+let cam = { x: 1500, y: 1000 };
 
-// Stars
-for(let i = 0; i < 350; i++) {
-  stars.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, size: Math.random() * 1.3, twinkle: Math.random() * 6.28 });
+// Stars (screen-space decoration - drawn by Three.js background)
+let bgStars = [];
+for(let i = 0; i < 200; i++) {
+  bgStars.push({ x: Math.random() * window.innerWidth, y: Math.random() * window.innerHeight, size: Math.random() * 1.3, twinkle: Math.random() * 6.28 });
 }
 
 function randomInZone(entityType) {
@@ -1152,8 +1453,6 @@ function spawnEntities() {
     entities.push({ type: 'crystal', x: pos.x, y: pos.y, size: 4 + Math.random() * 4, hue: 280 + Math.random() * 40, pulse: Math.random() * 6.28 });
   }
 }
-spawnEntities();
-
 // === PATH ===
 function selectPath(path, elem) {
   document.querySelectorAll('.path-btn').forEach(b => b.classList.remove('selected'));
@@ -1200,8 +1499,26 @@ function startGame() {
   player.maxHp = 100;
   player.targetX = null;
   player.targetY = null;
-  cam.x = 0;
-  cam.y = 0;
+  cam.x = 1500;
+  cam.y = 1000;
+  
+  // Create 3D player mesh
+  if (threeObjs.player) { entityGroup.remove(threeObjs.player); }
+  threeObjs.player = makePlayerMesh();
+  threeObjs.player.position.set(player.x, 0, player.y);
+  entityGroup.add(threeObjs.player);
+  controls.target.set(player.x, 0, player.y);
+  camera.position.set(player.x - 120, 100, player.y + 120);
+  
+  // Clear stale 3D objects
+  threeObjs.npcs.forEach(m => entityGroup.remove(m));
+  threeObjs.npcs.clear();
+  threeObjs.structures.forEach(m => entityGroup.remove(m));
+  threeObjs.structures.clear();
+  threeObjs.resources.forEach(m => entityGroup.remove(m));
+  threeObjs.resources.clear();
+  threeObjs.enemies.forEach(m => entityGroup.remove(m));
+  threeObjs.enemies.clear();
   
   particles = [];
   floatingTexts = [];
@@ -1231,7 +1548,20 @@ function continueGame() {
   if (!loadGame()) { showToast('No save found!'); return; }
   player.x = player.x || WORLD_W / 2;
   player.y = player.y || WORLD_H / 2;
-  cam.x = 0; cam.y = 0;
+  cam.x = player.x; cam.y = player.y;
+  
+  // Rebuild 3D player
+  if (threeObjs.player) { entityGroup.remove(threeObjs.player); }
+  threeObjs.player = makePlayerMesh();
+  threeObjs.player.position.set(player.x, 0, player.y);
+  entityGroup.add(threeObjs.player);
+  controls.target.set(player.x, 0, player.y);
+  camera.position.set(player.x - 120, 100, player.y + 120);
+  threeObjs.npcs.forEach(m => entityGroup.remove(m)); threeObjs.npcs.clear();
+  threeObjs.structures.forEach(m => entityGroup.remove(m)); threeObjs.structures.clear();
+  threeObjs.resources.forEach(m => entityGroup.remove(m)); threeObjs.resources.clear();
+  threeObjs.enemies.forEach(m => entityGroup.remove(m)); threeObjs.enemies.clear();
+  
   particles = []; floatingTexts = [];
   spawnEntities(); spawnResourceNodes(); spawnNPCs();
   document.getElementById('menu').classList.add('hidden');
@@ -1335,6 +1665,8 @@ function updateStats() {
   document.getElementById('day-text-hud').textContent = 'Day ' + Math.floor(game.day);
   document.getElementById('entangle-hud').textContent = '⟨E⟩ ' + Math.floor(game.entanglement) + '%';
   
+  const z = getPlayerZone(); document.getElementById('zone-display').textContent = z ? z.name : '—';
+  
   document.getElementById('hud-clickPwr').textContent = '+' + Math.floor(pathData.clickBonus * (1 + game.meditation * 0.1));
   document.getElementById('hud-auto').textContent = '+' + game.autoRate.toFixed(1) + '/s';
   document.getElementById('hud-moon').textContent = moonBonus + 'x';
@@ -1430,6 +1762,7 @@ function evolve() {
     game.meditation = Math.max(0, game.meditation - 5);
     game.harmony = Math.max(0, game.harmony - 3);
     
+    sfxEvolve();
     showMessage('⚡ ' + phases[game.phase].toUpperCase() + ' ⚡');
     addLog('▶ ' + phases[game.phase]);
     
@@ -1570,7 +1903,7 @@ function launch() {
     addLog('📡 Converting to pure signal...');
     showMessage('🌌 ENTERING THE COSMIC VOID 🌌');
     for(let i = 0; i < 80; i++) {
-      particles.push({ x: canvas.width/2, y: canvas.height/2, vx: (Math.random() - 0.5) * 25, vy: (Math.random() - 0.5) * 25, size: 3.5, life: 2, color: '#00ffcc' });
+      particles.push({ x: player.x, y: player.y, vx: (Math.random() - 0.5) * 25, vy: (Math.random() - 0.5) * 25, size: 3.5, life: 2, color: '#00ffcc' });
     }
     updateStats();
   }
@@ -1637,6 +1970,153 @@ window.addEventListener('keydown', e => {
 
 window.addEventListener('keyup', e => keys[e.key] = false);
 
+// === MOBILE TOUCH CONTROLS ===
+const joystick = { dx: 0, dy: 0, active: false };
+const jBase = document.getElementById('joystick-base');
+const jKnob = document.getElementById('joystick-knob');
+let jTouchId = null;
+
+jBase.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  jTouchId = t.identifier;
+  joystick.active = true;
+  jKnob.classList.add('active');
+}, { passive: false });
+
+document.addEventListener('touchmove', e => {
+  if (!joystick.active) return;
+  let t = null;
+  for (let i = 0; i < e.changedTouches.length; i++) {
+    if (e.changedTouches[i].identifier === jTouchId) { t = e.changedTouches[i]; break; }
+  }
+  if (!t) return;
+  const rect = jBase.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = t.clientX - cx;
+  const dy = t.clientY - cy;
+  const maxR = rect.width / 2 - 22;
+  const dist = Math.hypot(dx, dy);
+  const clamp = Math.min(dist, maxR);
+  const angle = Math.atan2(dy, dx);
+  jKnob.style.transform = `translate(${Math.cos(angle) * clamp}px, ${Math.sin(angle) * clamp}px)`;
+  if (dist > 5) {
+    joystick.dx = Math.cos(angle) * Math.min(1, dist / maxR);
+    joystick.dy = Math.sin(angle) * Math.min(1, dist / maxR);
+  } else {
+    joystick.dx = 0; joystick.dy = 0;
+  }
+}, { passive: false });
+
+const endTouch = e => {
+  if (!joystick.active) return;
+  jKnob.style.transform = 'translate(0,0)';
+  jKnob.classList.remove('active');
+  joystick.active = false;
+  joystick.dx = 0; joystick.dy = 0;
+  jTouchId = null;
+};
+document.addEventListener('touchend', endTouch);
+document.addEventListener('touchcancel', endTouch);
+
+// Touch tap-to-move on renderer canvas
+renderer.domElement.addEventListener('touchstart', e => {
+  if (!running) return;
+  const jRect = jBase.getBoundingClientRect();
+  const t = e.changedTouches[0];
+  if (t.clientX >= jRect.left && t.clientX <= jRect.right &&
+      t.clientY >= jRect.top && t.clientY <= jRect.bottom) return;
+  const wx = t.clientX + cam.x, wy = t.clientY + cam.y;
+  if (interactNPC(wx, wy)) return;
+  if (interactStructure(wx, wy)) return;
+  player.targetX = wx;
+  player.targetY = wy;
+}, { passive: true });
+
+// === AUDIO ENGINE (Web Audio API) ===
+let audioCtx = null;
+let masterGain = null;
+let audioInitialized = false;
+let audioMuted = false;
+
+function toggleMute() {
+  audioMuted = !audioMuted;
+  if (masterGain) masterGain.gain.value = audioMuted ? 0 : 0.25;
+  document.getElementById('mute-btn').textContent = audioMuted ? '🔇' : '🔊';
+}
+
+function initAudio() {
+  if (audioInitialized) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.25;
+    masterGain.connect(audioCtx.destination);
+    audioInitialized = true;
+  } catch (e) {}
+}
+
+function playNote(freq, duration, type, vol) {
+  if (!audioInitialized) return;
+  try {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol || 0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  } catch (e) {}
+}
+
+function sfxCollect() {
+  initAudio();
+  playNote(880, 0.12, 'sine', 0.1);
+  setTimeout(() => playNote(1100, 0.1, 'sine', 0.07), 50);
+}
+
+function sfxEvolve() {
+  initAudio();
+  [440, 554, 659, 880].forEach((f, i) => {
+    setTimeout(() => playNote(f, 0.3, 'sine', 0.12), i * 80);
+  });
+}
+
+function sfxHit() {
+  initAudio();
+  playNote(150, 0.15, 'sawtooth', 0.12);
+  playNote(100, 0.1, 'square', 0.08);
+}
+
+function sfxBuild() {
+  initAudio();
+  playNote(330, 0.08, 'sine', 0.1);
+  setTimeout(() => playNote(440, 0.08, 'sine', 0.1), 60);
+  setTimeout(() => playNote(554, 0.12, 'sine', 0.08), 120);
+}
+
+function sfxUpgrade() {
+  initAudio();
+  playNote(660, 0.1, 'triangle', 0.1);
+  setTimeout(() => playNote(880, 0.15, 'triangle', 0.08), 100);
+}
+
+function sfxWave() {
+  initAudio();
+  playNote(200, 0.3, 'sawtooth', 0.08);
+  setTimeout(() => playNote(250, 0.2, 'sawtooth', 0.06), 200);
+}
+
+function sfxNotify() {
+  initAudio();
+  playNote(660, 0.06, 'sine', 0.07);
+  setTimeout(() => playNote(880, 0.06, 'sine', 0.07), 60);
+}
+
 function useAbility() {
   switch(game.path) {
     case 'plant': grow(); break;
@@ -1666,74 +2146,151 @@ function skipEvolve() {
 }
 
 // === GAME LOOP ===
+// ─── 3D SYNC + GAME LOOP ───
+function sync3D() {
+  // Sync player position
+  if (threeObjs.player) {
+    threeObjs.player.position.set(player.x, 0, player.y);
+    threeObjs.player.rotation.y = player.angle;
+    threeObjs.player.scale.setScalar(1 + Math.sin(player.pulse * 2) * 0.05);
+  }
+  
+  // Sync camera target
+  controls.target.lerp(new THREE.Vector3(player.x, 0, player.y), 0.08);
+  
+  // Sync NPCs
+  game.npcs.forEach(n => {
+    let mesh = threeObjs.npcs.get(n.id);
+    if (!mesh) {
+      mesh = makeNPCMesh(n.color, n.icon);
+      mesh.position.set(n.x, 0, n.y);
+      entityGroup.add(mesh);
+      threeObjs.npcs.set(n.id, mesh);
+    }
+    mesh.position.lerp(new THREE.Vector3(n.x, 0, n.y), 0.15);
+    mesh.rotation.y += 0.02;
+  });
+  
+  // Sync structures
+  game.structures.forEach(s => {
+    let mesh = threeObjs.structures.get(s.id);
+    if (!mesh) {
+      mesh = makeStructureMesh(s.type, s.color || '#00aaff');
+      mesh.position.set(s.x, 0, s.y);
+      entityGroup.add(mesh);
+      threeObjs.structures.set(s.id, mesh);
+    }
+    // Animate based on type
+    const child = mesh.children[0];
+    if (child && s.type === 'essenceGeyser') child.rotation.y += 0.01;
+    if (child && s.type === 'meditationChamber') child.rotation.y += 0.005;
+  });
+  
+  // Sync resources
+  resourceNodes.forEach((r, idx) => {
+    let mesh = threeObjs.resources.get(idx);
+    if (!mesh) {
+      mesh = makeResourceMesh();
+      mesh.position.set(r.x, 0, r.y);
+      entityGroup.add(mesh);
+      threeObjs.resources.set(idx, mesh);
+    }
+    mesh.position.y = Math.sin(Date.now() * 0.002 + idx) * 2 + 4;
+    mesh.rotation.y += 0.03;
+  });
+  // Remove stale resource meshes
+  threeObjs.resources.forEach((mesh, id) => { if (id >= resourceNodes.length) { entityGroup.remove(mesh); threeObjs.resources.delete(id); } });
+  
+  // Remove stale enemies
+  threeObjs.enemies.forEach((mesh, id) => { entityGroup.remove(mesh); });
+  threeObjs.enemies.clear();
+  
+  // Update particles system
+  if (threeObjs.particles) {
+    const pArr = threeObjs.particles.geometry.attributes.position.array;
+    for (let i = 0; i < pArr.length; i += 3) {
+      pArr[i] += (Math.random() - 0.5) * 2;
+      pArr[i+1] += (Math.random() - 0.5) * 0.3;
+      pArr[i+2] += (Math.random() - 0.5) * 2;
+      if (pArr[i] < 0 || pArr[i] > WORLD_W) pArr[i] = player.x + (Math.random() - 0.5) * 400;
+      if (pArr[i+2] < 0 || pArr[i+2] > WORLD_H) pArr[i+2] = player.y + (Math.random() - 0.5) * 400;
+      if (pArr[i+1] < 0 || pArr[i+1] > 50) pArr[i+1] = Math.random() * 30;
+    }
+    threeObjs.particles.geometry.attributes.position.needsUpdate = true;
+  }
+  
+  // Floating labels
+  threeObjs.floatLabels.forEach(l => { entityGroup.remove(l); });
+  threeObjs.floatLabels = [];
+  floatingTexts.forEach(t => {
+    if (t.life > 0) {
+      const canvas2 = document.createElement('canvas');
+      canvas2.width = 128; canvas2.height = 32;
+      const c2d = canvas2.getContext('2d');
+      c2d.font = 'bold 14px Arial'; c2d.textAlign = 'center'; c2d.fillStyle = t.color;
+      c2d.globalAlpha = t.life; c2d.fillText(t.text, 64, 20);
+      const tex = new THREE.CanvasTexture(canvas2);
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+      spr.position.set(t.x, 15, t.y);
+      spr.scale.set(30, 8, 1);
+      entityGroup.add(spr);
+      threeObjs.floatLabels.push(spr);
+    }
+  });
+}
+
 function gameLoop() {
   if (!running) return;
   
-  ctx.clearRect(-20, -20, canvas.width + 40, canvas.height + 40);
-  ctx.fillStyle = 'rgba(0, 0, 8, 0.4)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
   const pathData = PATHS[game.path];
   
-  // Stars (screen space, background)
-  stars.forEach(s => {
-    s.twinkle += 0.045;
-    const alpha = 0.12 + Math.sin(s.twinkle) * 0.12;
-    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  
   // Physics-based movement
-  const accel = 0.45;
-  const drag = 0.88;
-  const maxSpeed = 4 + game.phase * 0.2;
+  const accel = 0.45, drag = 0.88, maxSpeed = 4 + game.phase * 0.2;
   let mx = 0, my = 0;
   if (keys['w'] || keys['ArrowUp']) my -= 1;
   if (keys['s'] || keys['ArrowDown']) my += 1;
   if (keys['a'] || keys['ArrowLeft']) mx -= 1;
   if (keys['d'] || keys['ArrowRight']) mx += 1;
-  if (player.targetX !== null && Math.hypot(player.targetX - player.x, player.targetY - player.y) > 10) {
+  if (joystick.active) { mx += joystick.dx; my += joystick.dy; }
+  if (!joystick.active && player.targetX !== null && Math.hypot(player.targetX - player.x, player.targetY - player.y) > 10) {
     const a = Math.atan2(player.targetY - player.y, player.targetX - player.x);
     mx += Math.cos(a); my += Math.sin(a);
   } else { player.targetX = null; player.targetY = null; }
   if (mx !== 0 || my !== 0) {
     const len = Math.hypot(mx, my);
-    player.vx += (mx / len) * accel;
-    player.vy += (my / len) * accel;
+    player.vx += (mx / len) * accel; player.vy += (my / len) * accel;
   }
-  player.vx *= drag;
-  player.vy *= drag;
+  player.vx *= drag; player.vy *= drag;
   const spd = Math.hypot(player.vx, player.vy);
   if (spd > maxSpeed) { player.vx = (player.vx / spd) * maxSpeed; player.vy = (player.vy / spd) * maxSpeed; }
-  player.x += player.vx;
-  player.y += player.vy;
+  player.x += player.vx; player.y += player.vy;
   worldBounds();
   
-  // Camera follows player (centered)
-  cam.x += (player.x - canvas.width / 2 - cam.x) * 0.08;
-  cam.y += (player.y - canvas.height / 2 - cam.y) * 0.08;
-  
-  // Player angle toward mouse in world
+  cam.x = player.x; cam.y = player.y;
   player.angle = Math.atan2(mouseWorldY - player.y, mouseWorldX - player.x);
+  player.pulse += 0.045;
   
-  // Movement trail
+  // Movement trail (2D particles -> Three.js not synced 1:1, kept for reference)
   if (Math.hypot(player.vx, player.vy) > 0.5) {
     for (let i = 0; i < 2; i++) {
-      particles.push({
-        x: player.x + (Math.random() - 0.5) * 15,
-        y: player.y + (Math.random() - 0.5) * 15,
-        vx: -player.vx * 0.1 + (Math.random() - 0.5) * 0.5,
-        vy: -player.vy * 0.1 + (Math.random() - 0.5) * 0.5,
-        size: 1.5 + Math.random() * 1.5,
-        life: 0.6 + Math.random() * 0.3,
-        color: PATHS[game.path].color
-      });
+      particles.push({ x: player.x + (Math.random() - 0.5) * 15, y: player.y + (Math.random() - 0.5) * 15,
+        vx: -player.vx * 0.1 + (Math.random() - 0.5) * 0.5, vy: -player.vy * 0.1 + (Math.random() - 0.5) * 0.5,
+        size: 1.5 + Math.random() * 1.5, life: 0.6 + Math.random() * 0.3, color: pathData.color });
     }
   }
   
-  // Spawn entities in world (zone-aware)
+  // Spawn ambient zone entities
+  if (Math.random() < 0.08) {
+    const zone = getPlayerZone();
+    if (zone) {
+      const zc = { 'Primordial Shallows':'rgba(0,255,204,0.3)','Verdant Wilds':'rgba(34,139,34,0.4)','Quantum Fields':'rgba(136,0,255,0.3)','Cosmic Expanse':'rgba(255,0,255,0.25)','Void Wastes':'rgba(100,100,120,0.2)' };
+      particles.push({ x: player.x + (Math.random() - 0.5) * 200, y: player.y + (Math.random() - 0.5) * 200,
+        vx: (Math.random() - 0.5) * 0.3, vy: -0.1 - Math.random() * 0.2, size: 1 + Math.random(), life: 1.2,
+        color: zc[zone.name] || 'rgba(255,255,255,0.1)' });
+    }
+  }
+  
+  // Spawn entities in world
   if (Math.random() < 0.02 + game.phase * 0.002) {
     const pos = randomInZone('amoeba');
     entities.push({ type: 'amoeba', x: pos.x, y: pos.y, size: 10 + Math.random() * 14, vx: (Math.random() - 0.5) * 0.9, vy: (Math.random() - 0.5) * 0.9, hue: 100 + Math.random() * 80, pulse: Math.random() * 6.28, wobble: Math.random() * 6.28 });
@@ -1746,109 +2303,141 @@ function gameLoop() {
     const pos = randomInZone('crystal');
     entities.push({ type: 'crystal', x: pos.x, y: pos.y, size: 4 + Math.random() * 4, hue: 280 + Math.random() * 40, pulse: Math.random() * 6.28 });
   }
-
-  // Render all world layers (zones, entities, structures, TD, NPCs, resource nodes, auto-collect)
-  renderWorld(ctx);
-
-  // Player character
-  player.pulse += 0.045;
-  character.eyeTarget.x += (mouseWorldX - character.eyeTarget.x) * 0.08;
-  character.eyeTarget.y += (mouseWorldY - character.eyeTarget.y) * 0.08;
   
-  ctx.save();
-  ctx.translate(-cam.x, -cam.y);
-  renderCharacter(ctx, player.x, player.y, player.size, game.path, game.phase, player.pulse, character.eyeTarget.x, character.eyeTarget.y, pathData.color);
-  ctx.restore();
-
-  // Particles (world coords, rendered relative to camera)
-  particles = particles.filter(p => {
-    p.x += p.vx; p.y += p.vy;
-    p.life -= 0.018;
-    if (p.life > 0) {
-      ctx.globalAlpha = p.life;
-      ctx.fillStyle = p.color;
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 7;
-      ctx.beginPath();
-      ctx.arc(p.x - cam.x, p.y - cam.y, p.size * p.life, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.globalAlpha = 1;
-      return true;
+  // Auto-collect nearby entities
+  for (let i = entities.length - 1; i >= 0; i--) {
+    const e = entities[i];
+    const dist = Math.hypot(player.x - e.x, player.y - e.y);
+    if (dist < player.size + e.size + 15) {
+      if (e.type === 'amoeba') game.essence += 2 + game.phase;
+      else if (e.type === 'nutrient') { game.biomass += Math.floor(2 + game.phase * 0.5); game.essence += 1; }
+      else if (e.type === 'crystal') game.quantum += Math.floor(1 + game.phase * 0.3);
+      entities.splice(i, 1);
     }
-    return false;
-  });
-
-  // Floating text
-  floatingTexts = floatingTexts.filter(t => {
-    t.y += t.vy;
-    t.life -= 0.018;
-    if (t.life > 0) {
-      ctx.globalAlpha = t.life;
-      ctx.font = 'bold 12px Arial';
-      ctx.fillStyle = t.color;
-      ctx.fillText(t.text, t.x - cam.x, t.y - cam.y);
-      ctx.globalAlpha = 1;
-      return true;
-    }
-    return false;
-  });
+  }
   
-  // Tick life sim needs
+  // Auto-collect resource nodes by proximity
+  for (let i = resourceNodes.length - 1; i >= 0; i--) {
+    const r = resourceNodes[i];
+    if (Math.hypot(player.x - r.x, player.y - r.y) < player.size + 15) {
+      game.resources.crystal += Math.floor(r.amount * 0.2);
+      game.resources.essenceShard += Math.floor(r.amount * 0.3);
+      game.essence += Math.floor(r.amount * 0.5);
+      floatingTexts.push({ x: r.x, y: r.y - 20, text: '+' + Math.floor(r.amount * 0.5), color: '#ffd700', life: 0.6, vy: -2 });
+      for (let j = 0; j < 8; j++) particles.push({ x: r.x, y: r.y, vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 6, size: 2, life: 0.5, color: '#ffd700' });
+      resourceNodes.splice(i, 1);
+      setTimeout(() => { if (running) resourceNodes.push({ type: r.type, x: 100 + Math.random() * (WORLD_W - 200), y: 100 + Math.random() * (WORLD_H - 200), amount: 10 + Math.floor(Math.random() * 30), pulse: Math.random() * 6.28 }); }, 30000);
+    }
+  }
+  
+  // Sync game state to 3D scene
+  sync3D();
+  
+  // Animate player glow
+  if (threeObjs.player) {
+    const glow = threeObjs.player.children[threeObjs.player.children.length - 1];
+    if (glow && glow.isSprite) glow.scale.setScalar(40 + Math.sin(Date.now() * 0.002) * 10);
+  }
+  
+  // Particles lifecycle (2D -> keep for data, 3D synced via points system)
+  particles = particles.filter(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.018; return p.life > 0; });
+  floatingTexts = floatingTexts.filter(t => { t.y += t.vy; t.life -= 0.018; return t.life > 0; });
+  
+  // Render Three.js scene
+  controls.update();
+  renderer.render(scene, camera);
+  
+  // Game logic ticks
   tickNeeds();
-  
-  // Tick tower defense
   tickTD();
-  
-  // Tick random events
   tickEvents();
-  
-  // Tick NPCs
   tickNPCs();
-  
-  // Tick structures (passive bonuses)
   tickBuildings();
-  
-  // Auto essence + decay
   game.essence += game.autoRate * 0.016;
   game.meditation = Math.max(0, game.meditation - 0.003);
   game.harmony = Math.max(0, game.harmony - 0.002);
   game.day += 0.008;
-  
-  // Auto-save every 300 frames (~5 seconds at 60fps)
   game._saveTimer = (game._saveTimer || 0) + 1;
-  if (game._saveTimer >= 300) {
-    game._saveTimer = 0;
-    saveGame();
-  }
+  if (game._saveTimer >= 300) { game._saveTimer = 0; saveGame(); }
   
   updateStats();
-  
+  renderMinimap();
   requestAnimationFrame(gameLoop);
 }
 
-// === MOUSE TRACKING ===
-let mouseX = 0, mouseY = 0;
-let mouseWorldX = 0, mouseWorldY = 0;
-
+// ─── MOUSE TRACKING ───
+let mouseX = 0, mouseY = 0, mouseWorldX = 0, mouseWorldY = 0;
 document.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; mouseWorldX = mouseX + cam.x; mouseWorldY = mouseY + cam.y; });
 
-// === CAMERA SYSTEM ===
-const WORLD_W = 3000, WORLD_H = 2000;
+// ─── WORLD BOUNDS ───
 function worldBounds() { player.x = Math.max(45, Math.min(WORLD_W - 45, player.x)); player.y = Math.max(45, Math.min(WORLD_H - 45, player.y)); }
 
-// === CLICK HANDLER ===
-canvas.addEventListener('click', e => {
+// ─── MAP STUB (opens 3D overview) ───
+function showMap() {
+  camera.position.set(1500, 400, 1000);
+  controls.target.set(1500, 0, 1000);
+  showToast('?? 3D World View — scroll to zoom, drag to orbit');
+}
+
+// ─── CLICK HANDLER (Raycasting for 3D) ───
+renderer.domElement.addEventListener('click', e => {
   if (!running) return;
-  const wx = e.clientX + cam.x, wy = e.clientY + cam.y;
-  // Try NPC interaction first
-  if (interactNPC(wx, wy)) return;
-  // Try structure upgrade
-  if (interactStructure(wx, wy)) return;
-  // Click to move toward
-  player.targetX = wx;
-  player.targetY = wy;
+  initAudio();
+  pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+  const target = new THREE.Vector3();
+  const ray = raycaster.ray;
+  const hit = ray.intersectPlane(groundPlane, target);
+  if (hit) {
+    const wx = target.x, wy = target.z;
+    if (interactNPC(wx, wy)) return;
+    if (interactStructure(wx, wy)) return;
+    player.targetX = wx;
+    player.targetY = wy;
+  }
 });
+
+// ─── MINI-MAP ───
+const mmCanvas = document.getElementById('minimap-canvas');
+const mmCtx = mmCanvas.getContext('2d');
+mmCanvas.width = 130; mmCanvas.height = 130;
+
+function renderMinimap() {
+  const mmSize = 130, s = mmSize / Math.max(WORLD_W, WORLD_H);
+  mmCtx.clearRect(0, 0, mmSize, mmSize);
+  mmCtx.fillStyle = 'rgba(0,0,0,0.4)';
+  mmCtx.fillRect(0, 0, mmSize, mmSize);
+  // Zone borders on minimap
+  ZONES.forEach(z => {
+    mmCtx.strokeStyle = 'rgba(0,170,255,0.1)';
+    mmCtx.lineWidth = 0.5;
+    mmCtx.strokeRect(z.x * s, z.y * s, z.w * s, z.h * s);
+  });
+  // Resources
+  mmCtx.fillStyle = 'rgba(255,215,0,0.3)';
+  resourceNodes.forEach(r => mmCtx.fillRect(r.x * s - 0.5, r.y * s - 0.5, 1, 1));
+  // NPCs
+  mmCtx.fillStyle = '#ff6b9d';
+  game.npcs.forEach(n => mmCtx.fillRect(n.x * s - 1, n.y * s - 1, 2, 2));
+  // Structures
+  mmCtx.fillStyle = '#00d4ff';
+  game.structures.forEach(st => mmCtx.fillRect(st.x * s - 1, st.y * s - 1, 2, 2));
+  // TD enemies
+  mmCtx.fillStyle = '#ff4444';
+  game.tdEnemies.forEach(e => mmCtx.fillRect(e.x * s - 1, e.y * s - 1, 2, 2));
+  // Player
+  mmCtx.fillStyle = '#ffd700';
+  mmCtx.beginPath();
+  mmCtx.arc(player.x * s, player.y * s, 3, 0, Math.PI * 2);
+  mmCtx.fill();
+  // Camera viewport rectangle
+  mmCtx.strokeStyle = 'rgba(255,255,255,0.2)';
+  mmCtx.lineWidth = 1;
+  const vw = window.innerWidth * s * 0.5, vh = window.innerHeight * s * 0.5;
+  mmCtx.strokeRect((cam.x - vw) * s, (cam.y - vh) * s, vw * 2 * s, vh * 2 * s);
+}
 
 // === LIFE SIM NEEDS ===
 function tickNeeds() {
@@ -1878,6 +2467,13 @@ const WORLD_ZONES = [
   { name: 'Cosmic Expanse', x: 1800, y: 600, w: 1200, h: 800, color: '#ff00ff', entities: ['crystal','nutrient'] },
   { name: 'Void Wastes', x: 800, y: 1400, w: 1000, h: 600, color: '#444', entities: ['amoeba','crystal'] }
 ];
+
+function getPlayerZone() {
+  for (const z of WORLD_ZONES) {
+    if (player.x >= z.x && player.x <= z.x + z.w && player.y >= z.y && player.y <= z.y + z.h) return z;
+  }
+  return null;
+}
 
 // === RESOURCE NODES ===
 let resourceNodes = [];
@@ -2055,6 +2651,7 @@ function buildStructure(type) {
   const placeX = player.x + (Math.random() - 0.5) * 100;
   const placeY = player.y + (Math.random() - 0.5) * 100;
   game.structures.push({ type, x: Math.max(50, Math.min(WORLD_W - 50, placeX)), y: Math.max(50, Math.min(WORLD_H - 50, placeY)), hp: 100, time: Date.now(), level: 1 });
+  sfxBuild();
   addLog('🏗 Built ' + s.icon + ' ' + s.name);
   showToast('🏗 ' + s.name + ' constructed!');
   updateStats();
@@ -2101,6 +2698,7 @@ function interactStructure(wx, wy) {
       }
       game.essence -= cost;
       s.level++;
+      sfxUpgrade();
       showToast('⬆ ' + STRUCTURES[s.type].name + ' upgraded to Lv.' + s.level);
       addLog('⬆ Upgraded ' + STRUCTURES[s.type].name + ' to Lv.' + s.level);
       updateStats();
@@ -2119,15 +2717,14 @@ function tickTD() {
       const dx = player.x - e.x, dy = player.y - e.y;
       const dist = Math.hypot(dx, dy);
       if (dist > 0) { e.x += (dx / dist) * e.speed; e.y += (dy / dist) * e.speed; }
-      // Contact damage
       if (dist < 30) { player.hp = Math.max(0, player.hp - e.damage * 0.02); }
     });
-    // Turrets auto-attack
+    // Turrets auto-attack (damage scales with turret level)
     const turrets = game.structures.filter(s => s.type === 'stellarTurret');
     turrets.forEach(t => {
-      if (game.tdEnemies.length > 0 && Math.random() < 0.05) {
+      if (game.tdEnemies.length > 0 && Math.random() < 0.05 + t.level * 0.01) {
         const target = game.tdEnemies[0];
-        target.hp -= 8 + game.phase;
+        target.hp -= 8 + game.phase + t.level * 3;
         if (target.hp <= 0) {
           const idx = game.tdEnemies.indexOf(target);
           if (idx > -1) {
@@ -2141,11 +2738,13 @@ function tickTD() {
     // Wave cleared
     if (game.tdEnemies.length === 0 && game.tdTimer > 60) {
       game.tdActive = false;
-      game.tdCooldown = 60 - Math.min(game.tdWave, 30);
-      const reward = 50 * game.tdWave + game.phase * 30;
+      game.tdCooldown = Math.max(60, 120 - game.tdWave * 2);
+      const bossBonus = game.tdWave % 5 === 0 ? game.tdWave * 100 : 0;
+      const reward = 50 * game.tdWave + game.phase * 30 + bossBonus;
       game.essence += reward;
       game.resources.voidResidue += game.tdWave;
-      showToast('✦ Wave ' + game.tdWave + ' clear! +' + reward + ' essence');
+      if (bossBonus > 0) showToast('✦ BOSS wave cleared! +' + reward + ' essence');
+      else showToast('✦ Wave ' + game.tdWave + ' clear! +' + reward + ' essence');
       addLog('✦ Wave ' + game.tdWave + ' cleared! +' + reward);
       document.getElementById('td-hud').classList.remove('show');
       updateStats();
@@ -2162,25 +2761,46 @@ function startWave() {
   game.tdActive = true;
   game.tdWave++;
   game.tdTimer = 0;
-  const count = 2 + game.tdWave + Math.floor(game.phase / 2);
-  for (let i = 0; i < count; i++) {
+  const isBoss = game.tdWave % 5 === 0;
+  if (isBoss) {
+    // Spawn 1 boss instead of regular horde
     const angle = Math.random() * Math.PI * 2;
     const dist = 300 + Math.random() * 100;
     game.tdEnemies.push({
       x: player.x + Math.cos(angle) * dist, y: player.y + Math.sin(angle) * dist,
-      hp: 15 + game.tdWave * 5 + game.phase * 3,
-      maxHp: 15 + game.tdWave * 5 + game.phase * 3,
-      speed: 0.3 + game.tdWave * 0.02,
-      damage: 3 + game.tdWave,
-      icon: game.tdWave > 5 ? '🌀' : game.tdWave > 3 ? '👁' : '👾',
-      color: game.tdWave > 5 ? '#ff4444' : game.tdWave > 3 ? '#ff8800' : '#ff6644'
+      hp: 100 + game.tdWave * 20 + game.phase * 10,
+      maxHp: 100 + game.tdWave * 20 + game.phase * 10,
+      speed: 0.2 + game.tdWave * 0.01,
+      damage: 10 + game.tdWave * 2,
+      icon: '👾',
+      color: '#ff0000',
+      boss: true
     });
+    document.getElementById('td-hud').classList.add('show');
+    document.getElementById('td-wave').textContent = '⚠ BOSS WAVE ' + game.tdWave + ' ⚠';
+    document.getElementById('td-count').textContent = 'BOSS';
+  } else {
+    const count = 2 + game.tdWave + Math.floor(game.phase / 2);
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 300 + Math.random() * 100;
+      game.tdEnemies.push({
+        x: player.x + Math.cos(angle) * dist, y: player.y + Math.sin(angle) * dist,
+        hp: 15 + game.tdWave * 5 + game.phase * 3,
+        maxHp: 15 + game.tdWave * 5 + game.phase * 3,
+        speed: 0.3 + game.tdWave * 0.02,
+        damage: 3 + game.tdWave,
+        icon: game.tdWave > 5 ? '🌀' : game.tdWave > 3 ? '👁' : '👾',
+        color: game.tdWave > 5 ? '#ff4444' : game.tdWave > 3 ? '#ff8800' : '#ff6644'
+      });
+    }
+    document.getElementById('td-hud').classList.add('show');
+    document.getElementById('td-wave').textContent = 'Wave ' + game.tdWave;
+    document.getElementById('td-count').textContent = 'Enemies: ' + count;
   }
-  document.getElementById('td-hud').classList.add('show');
-  document.getElementById('td-wave').textContent = 'Wave ' + game.tdWave;
-  document.getElementById('td-count').textContent = 'Enemies: ' + count;
-  showToast('⚡ Wave ' + game.tdWave + ' incoming!');
-  addLog('⚡ Wave ' + game.tdWave + ' inbound!');
+  sfxWave();
+  showToast('⚡ Wave ' + game.tdWave + (isBoss ? ' BOSS!' : '') + ' incoming!');
+  addLog('⚡ Wave ' + game.tdWave + (isBoss ? ' BOSS!' : '') + ' inbound!');
 }
 
 function renderTDEnemies(ctx) {
@@ -2188,17 +2808,29 @@ function renderTDEnemies(ctx) {
     if (e.x < cam.x - 50 || e.x > cam.x + canvas.width + 50 || e.y < cam.y - 50 || e.y > cam.y + canvas.height + 50) return;
     ctx.save();
     ctx.shadowColor = e.color;
-    ctx.shadowBlur = 12;
-    ctx.font = '22px Arial';
+    ctx.shadowBlur = e.boss ? 30 + Math.sin(Date.now() * 0.005) * 10 : 12;
+    ctx.font = e.boss ? '40px Arial' : '22px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    if (e.boss) {
+      ctx.shadowBlur = 40;
+      ctx.fillStyle = 'rgba(255,0,0,0.15)';
+      ctx.beginPath();
+      ctx.arc(e.x - cam.x, e.y - cam.y, 35, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.fillText(e.icon, e.x - cam.x, e.y - cam.y);
     ctx.shadowBlur = 0;
     const hpPct = e.hp / e.maxHp;
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(e.x - cam.x - 12, e.y - cam.y - 18, 24, 3);
+    ctx.fillRect(e.x - cam.x - (e.boss ? 20 : 12), e.y - cam.y - (e.boss ? 28 : 18), e.boss ? 40 : 24, 4);
     ctx.fillStyle = hpPct > 0.5 ? '#44ff44' : '#ff4444';
-    ctx.fillRect(e.x - cam.x - 12, e.y - cam.y - 18, 24 * hpPct, 3);
+    ctx.fillRect(e.x - cam.x - (e.boss ? 20 : 12), e.y - cam.y - (e.boss ? 28 : 18), (e.boss ? 40 : 24) * hpPct, 4);
+    if (e.boss) {
+      ctx.fillStyle = '#ff0000';
+      ctx.font = '8px Arial';
+      ctx.fillText('BOSS', e.x - cam.x, e.y - cam.y - 34);
+    }
     ctx.restore();
   });
 }
@@ -2222,6 +2854,7 @@ function arenaAttack() {
   if (game.arena.phase !== 'fighting') return;
   const dmg = 8 + game.phase * 2 + game.entanglement * 0.3 + Math.random() * 5;
   game.arena.enemyHP -= dmg;
+  sfxHit();
   addLog('⚔ Hit! -' + Math.floor(dmg));
   if (game.arena.enemyHP <= 0) { arenaWin(); }
   else { const cdmg = 3 + game.voidEssence * 0.1; if (Math.random() > game.entanglement / 200) game.arena.playerHP -= cdmg; }
@@ -2356,6 +2989,7 @@ function renderWorld(ctx) {
       if (e.type === 'crystal') game.quantum += val * 0.1;
       floatingTexts.push({ x: player.x, y: player.y - 20, text: '+' + val, color: '#88ff88', life: 0.6, vy: -2 });
       for (let j = 0; j < 5; j++) particles.push({ x: e.x, y: e.y, vx: (Math.random() - 0.5) * 5, vy: (Math.random() - 0.5) * 5, size: 2, life: 0.6, color: `hsla(${e.hue || 120},80%,55%,1)` });
+      if (Math.random() < 0.3) sfxCollect();
       return false;
     }
     if (dist < (player.size + e.size + 15) * 3) {
