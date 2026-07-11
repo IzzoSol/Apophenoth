@@ -837,6 +837,82 @@ body {
 #td-hud.show { display: flex; }
 #td-wave { font-weight: bold; }
 #td-count { color: #ff8888; }
+</style>
+/* === FIGHTING MODE SELECT === */
+.fight-select-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(7,6,14,0.92);
+  backdrop-filter: blur(20px);
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 20px;
+}
+.fight-select-overlay.show { display: flex; }
+.fight-select-box {
+  max-width: 700px; width: 100%;
+  max-height: 85vh; overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px; padding: 24px;
+}
+.fight-select-title {
+  font-size: 22px; font-weight: 700;
+  text-align: center; margin-bottom: 4px;
+  background: linear-gradient(135deg, var(--cyan), var(--gold));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.fight-select-subtitle {
+  text-align: center; font-size: 12px; color: var(--text-dim);
+  margin-bottom: 16px;
+}
+.fight-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px; margin-bottom: 16px;
+}
+.fight-card {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 8px;
+  text-align: center; cursor: pointer;
+  transition: all 0.2s;
+}
+.fight-card:hover { border-color: var(--cyan); transform: translateY(-2px); }
+.fight-card.selected { border-color: var(--gold); box-shadow: 0 0 20px rgba(255,215,0,0.2); }
+.fight-card .fc-icon { font-size: 28px; }
+.fight-card .fc-name { font-size: 14px; font-weight: 700; margin-top: 4px; }
+.fight-card .fc-role { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+.fight-card .fc-bonus { font-size: 9px; color: var(--text-dim); }
+.fight-card .fc-desc { font-size: 10px; color: var(--text2); margin-top: 4px; }
+.stage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px; margin-bottom: 16px;
+}
+.stage-card {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 16px 8px;
+  text-align: center; cursor: pointer;
+  transition: all 0.2s;
+}
+.stage-card:hover { border-color: var(--cyan); transform: translateY(-2px); }
+.stage-card.selected { border-color: var(--gold); box-shadow: 0 0 20px rgba(255,215,0,0.2); }
+.stage-card .sc-icon { font-size: 32px; }
+.stage-card .sc-name { font-size: 14px; font-weight: 700; margin-top: 4px; }
+.stage-card .sc-desc { font-size: 10px; color: var(--text-dim); }
+.fight-nav {
+  display: flex; gap: 8px; justify-content: center;
+  margin-top: 12px;
+}
+.fight-nav button {
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: 8px 20px;
+  border-radius: 8px; cursor: pointer; font-size: 13px;
+  transition: all 0.2s;
+}
+.fight-nav button:hover { border-color: var(--cyan); }
+.fight-nav button.primary { background: linear-gradient(135deg, var(--cyan), var(--purple)); color: #fff; border: none; }
+.fight-nav button.primary:hover { filter: brightness(1.2); }
+.fight-nav button:disabled { opacity: 0.4; cursor: not-allowed; }
 </head>
 <body>
 
@@ -856,6 +932,7 @@ body {
     <div class="begin-row">
       <button class="begin-btn" onclick="startGame()">✦ NEW GAME ✦</button>
       <button class="begin-btn secondary" id="continueBtn" onclick="continueGame()" style="display:none">↻ CONTINUE</button>
+      <button class="begin-btn secondary" onclick="openFightSelect()" style="margin-top:6px;background:linear-gradient(135deg,#ff444422,#8800ff22);border-color:#ff444466">⚔ FIGHTING MODE</button>
     </div>
     <div style="text-align:center;margin-top:4px;font-size:9px;color:var(--text-dim)"><span id="saveIndicator" style="cursor:pointer" onclick="clearSave();location.reload()"></span></div>
 
@@ -1087,6 +1164,32 @@ body {
   </div>
 </div>
 
+<!-- Character Select Overlay -->
+<div class="fight-select-overlay" id="charSelectOverlay">
+  <div class="fight-select-box">
+    <div class="fight-select-title">⚔ CHOOSE YOUR FIGHTER</div>
+    <div class="fight-select-subtitle">Select an agent to battle in the arena</div>
+    <div class="fight-grid" id="charGrid"></div>
+    <div class="fight-nav">
+      <button onclick="closeFightSelect()">Back</button>
+      <button class="primary" id="charConfirmBtn" onclick="confirmChar()" disabled>Confirm →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Stage Select Overlay -->
+<div class="fight-select-overlay" id="stageSelectOverlay">
+  <div class="fight-select-box">
+    <div class="fight-select-title">🏟 CHOOSE YOUR ARENA</div>
+    <div class="fight-select-subtitle">Pick the battleground for your fight</div>
+    <div class="stage-grid" id="stageGrid"></div>
+    <div class="fight-nav">
+      <button onclick="backToCharSelect()">← Back</button>
+      <button class="primary" id="stageConfirmBtn" onclick="confirmStage()" disabled>⚔ FIGHT!</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ─── THREE.JS IS GLOBAL (loaded via CDN script tags) ───
 if (typeof THREE === 'undefined') {
@@ -1109,7 +1212,7 @@ renderer.toneMappingExposure = 1.2;
 container.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 6000);
-const controls = new OrbitControls(camera, renderer.domElement);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.minDistance = 60;
@@ -2887,9 +2990,133 @@ function arenaLose() {
   game.needs.energy = Math.max(0, game.needs.energy - 15);
 }
 
+// === FIGHTING MODE SELECT ===
+const STAGES = [
+  { id: 'void', name: 'The Void', icon: '⬟', desc: 'Endless darkness — no rules', color: '#666' },
+  { id: 'cosmic', name: 'Cosmic Ring', icon: '🌌', desc: 'Among the stars and nebulae', color: '#8800ff' },
+  { id: 'inferno', name: 'Inferno Pit', icon: '🔥', desc: 'Raging flames all around', color: '#ff4400' },
+  { id: 'crystal', name: 'Crystal Hall', icon: '💎', desc: 'Reflective surfaces, sharp edges', color: '#00d4ff' },
+  { id: 'overworld', name: 'Overworld', icon: '🌍', desc: 'The natural world arena', color: '#22cc66' },
+];
+
+let selectedChar = null;
+let selectedStage = null;
+
+function openFightSelect() {
+  selectedChar = null;
+  selectedStage = null;
+  const grid = document.getElementById('charGrid');
+  grid.innerHTML = '';
+  for (const [key, agent] of Object.entries(AGENTS)) {
+    const card = document.createElement('div');
+    card.className = 'fight-card';
+    card.dataset.key = key;
+    card.innerHTML = '<div class="fc-icon">' + agent.icon + '</div><div class="fc-name" style="color:' + agent.color + '">' + agent.name + '</div><div class="fc-role">' + agent.role + '</div><div class="fc-desc">' + agent.desc + '</div>';
+    card.onclick = function() { selectFighter(key); };
+    grid.appendChild(card);
+  }
+  document.getElementById('charConfirmBtn').disabled = true;
+  document.getElementById('charSelectOverlay').classList.add('show');
+}
+
+function selectFighter(key) {
+  document.querySelectorAll('.fight-card').forEach(c => c.classList.remove('selected'));
+  const card = document.querySelector('.fight-card[data-key="' + key + '"]');
+  if (card) card.classList.add('selected');
+  selectedChar = key;
+  document.getElementById('charConfirmBtn').disabled = false;
+}
+
+function confirmChar() {
+  if (!selectedChar) return;
+  document.getElementById('charSelectOverlay').classList.remove('show');
+  const grid = document.getElementById('stageGrid');
+  grid.innerHTML = '';
+  for (const s of STAGES) {
+    const card = document.createElement('div');
+    card.className = 'stage-card';
+    card.dataset.id = s.id;
+    card.innerHTML = '<div class="sc-icon">' + s.icon + '</div><div class="sc-name" style="color:' + s.color + '">' + s.name + '</div><div class="sc-desc">' + s.desc + '</div>';
+    card.onclick = function() { selectStage(s.id); };
+    grid.appendChild(card);
+  }
+  document.getElementById('stageConfirmBtn').disabled = true;
+  document.getElementById('stageSelectOverlay').classList.add('show');
+}
+
+function selectStage(id) {
+  document.querySelectorAll('.stage-card').forEach(c => c.classList.remove('selected'));
+  const card = document.querySelector('.stage-card[data-id="' + id + '"]');
+  if (card) card.classList.add('selected');
+  selectedStage = id;
+  document.getElementById('stageConfirmBtn').disabled = false;
+}
+
+function confirmStage() {
+  if (!selectedChar || !selectedStage) return;
+  document.getElementById('stageSelectOverlay').classList.remove('show');
+  startFightingMode(selectedChar, selectedStage);
+}
+
+function backToCharSelect() {
+  document.getElementById('stageSelectOverlay').classList.remove('show');
+  document.getElementById('charSelectOverlay').classList.add('show');
+}
+
+function closeFightSelect() {
+  document.getElementById('charSelectOverlay').classList.remove('show');
+  document.getElementById('stageSelectOverlay').classList.remove('show');
+  selectedChar = null;
+  selectedStage = null;
+}
+
+function startFightingMode(charKey, stageId) {
+  const agent = AGENTS[charKey];
+  const stage = STAGES.find(s => s.id === stageId);
+  const enemyKeys = Object.keys(AGENTS).filter(k => k !== charKey);
+  const enemyKey = enemyKeys[Math.floor(Math.random() * enemyKeys.length)];
+  const enemy = AGENTS[enemyKey];
+
+  game.arena = {
+    active: true,
+    agent: enemyKey,
+    playerHP: 100,
+    enemyHP: 100,
+    phase: 'fighting',
+    timer: 0,
+    playerChar: charKey,
+    stage: stageId,
+  };
+
+  document.getElementById('arena-overlay').classList.add('show');
+  document.getElementById('arena-vs').innerHTML = agent.icon + ' ' + agent.name + ' <span style="color:var(--text-dim)">VS</span> ' + enemy.icon + ' ' + enemy.name;
+  document.getElementById('arena-status').textContent = '⚔ Fight! (' + stage.name + ')';
+  document.getElementById('arena-buttons').innerHTML =
+    '<button class="arena-btn" onclick="arenaAttack()">⚔ Attack</button>' +
+    '<button class="arena-btn" onclick="arenaDodge()">🌀 Dodge</button>' +
+    '<button class="arena-btn" onclick="arenaSpecial()">✦ Special</button>' +
+    '<button class="arena-btn danger" onclick="closeArena()">Retreat</button>';
+  updateArenaUI();
+}
+
+function arenaSpecial() {
+  if (game.arena.phase !== 'fighting') return;
+  const agent = AGENTS[game.arena.playerChar];
+  const bonus = agent.bonus();
+  const dmg = 15 + Math.floor(bonus * 0.2) + Math.random() * 8;
+  game.arena.enemyHP -= dmg;
+  sfxHit();
+  addLog('✦ ' + agent.name + ' Special! -' + Math.floor(dmg));
+  if (game.arena.enemyHP <= 0) { arenaWin(); }
+  else { const cdmg = 2 + Math.random() * 6; if (Math.random() > 0.3) game.arena.playerHP -= cdmg; }
+  updateArenaUI();
+}
+
 function closeArena() {
   document.getElementById('arena-overlay').classList.remove('show');
   game.arena.active = false;
+  selectedChar = null;
+  selectedStage = null;
 }
 
 function updateArenaUI() {
