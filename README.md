@@ -9,7 +9,7 @@ A cosmic 3D browser game where you begin as quantum foam and evolve through 13 p
 [![Play Now](https://img.shields.io/badge/▶%20PLAY%20NOW-izzoizzoizzo.github.io%2FApophenoth-ffd700?style=for-the-badge&logo=github&logoColor=black)](https://izzoizzoizzo.github.io/Apophenoth)
 [![License: MIT](https://img.shields.io/badge/License-MIT-8A2BE2?style=flat-square)](LICENSE)
 [![Play in Browser](https://img.shields.io/badge/Play%20in-Browser-00d4ff?style=flat-square)](https://izzoizzoizzo.github.io/Apophenoth)
-[![Stars](https://img.shields.io/github/stars/IzzoIzzoIzzo/Apophenoth?style=flat-square&color=ffd700)](https://github.com/IzzoIzzoIzzo/Apophenoth/stargazers)
+[![Stars](https://img.shields.io/github/stars/IzzoSol/Apophenoth?style=flat-square&color=ffd700)](https://github.com/IzzoSol/Apophenoth/stargazers)
 [![Single File](https://img.shields.io/badge/Zero%20Dependencies-Single%20HTML-ff6b9d?style=flat-square)]()
 
 </div>
@@ -99,7 +99,7 @@ Open `index.html` in any modern browser. That is the entire game.
 
 **Clone and play locally:**
 ```bash
-git clone https://github.com/IzzoIzzoIzzo/Apophenoth.git
+git clone https://github.com/IzzoSol/Apophenoth.git
 # Then open Apophenoth/index.html in your browser
 ```
 
@@ -159,12 +159,12 @@ Apophenoth/
 
 ## License
 
-MIT © IzzoIzzoIzzo — see [LICENSE](LICENSE) for details.
+MIT © IzzoSol — see [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
 
-Built by [IzzoSol](https://x.com/IzzoSol) &nbsp;·&nbsp; [SHADDAI AI](https://x.com/shaddaiAI) &nbsp;·&nbsp; Part of the ⚡ [SHADDAI ecosystem](https://github.com/IzzoIzzoIzzo/Shaddai)
+Built by [IzzoSol](https://x.com/IzzoSol) &nbsp;·&nbsp; [SHADDAI AI](https://x.com/shaddaiAI) &nbsp;·&nbsp; Part of the ⚡ [SHADDAI ecosystem](https://shaddai-g81x.onrender.com)
 
 </div>
